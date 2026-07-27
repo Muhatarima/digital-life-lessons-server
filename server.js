@@ -4,6 +4,7 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { toNodeHandler } = require("better-auth/node");
 const { auth } = require("./lib/auth");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -32,7 +33,7 @@ async function run() {
   console.log("MongoDB connected");
 
   const lessonsCollection = db.collection("lessons");
-  const usersCollection = db.collection("users");
+  const usersCollection = db.collection("user");
   const favoritesCollection = db.collection("favorites");
   const commentsCollection = db.collection("comments");
   const reportsCollection = db.collection("lessonsReports");
@@ -225,8 +226,8 @@ async function run() {
       res.status(500).send({ error: err.message });
     }
   });
-}
-// ---------- USER STATS ----------
+
+  // ---------- USER STATS ----------
 
   app.get("/api/users/stats/:userId", async (req, res) => {
     try {
@@ -242,6 +243,72 @@ async function run() {
       res.status(500).send({ error: err.message });
     }
   });
+
+  // ---------- STRIPE ----------
+
+  app.post("/api/create-checkout-session", async (req, res) => {
+    try {
+      const { userId, email } = req.body;
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "bdt",
+              product_data: {
+                name: "Digital Life Lessons - Premium Lifetime",
+              },
+              unit_amount: 150000,
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: { userId },
+        customer_email: email,
+        success_url: `${process.env.CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.CLIENT_URL}/payment/cancel`,
+      });
+
+      res.send({ url: session.url });
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.get("/api/verify-payment/:sessionId", async (req, res) => {
+    try {
+      const session = await stripe.checkout.sessions.retrieve(
+        req.params.sessionId
+      );
+      console.log(
+        "Session retrieved:",
+        session.payment_status,
+        session.metadata
+      );
+
+      if (session.payment_status === "paid") {
+        const userId = session.metadata.userId;
+        const result = await usersCollection.updateOne(
+          { id: userId },
+          { $set: { isPremium: true } }
+        );
+        console.log(
+          "Update result:",
+          result.matchedCount,
+          result.modifiedCount
+        );
+        res.send({ success: true });
+      } else {
+        res.send({ success: false });
+      }
+    } catch (err) {
+      console.error("Verify payment error:", err.message);
+      res.status(500).send({ error: err.message });
+    }
+  });
+}
 
 run().catch(console.error);
 
