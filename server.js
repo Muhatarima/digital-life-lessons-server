@@ -226,6 +226,22 @@ async function run() {
     }
   });
 }
+// ---------- USER STATS ----------
+
+  app.get("/api/users/stats/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const lessonsCreated = await lessonsCollection.countDocuments({
+        creatorId: userId,
+      });
+      const favoritesSaved = await favoritesCollection.countDocuments({
+        userId,
+      });
+      res.send({ lessonsCreated, favoritesSaved });
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
 
 run().catch(console.error);
 
