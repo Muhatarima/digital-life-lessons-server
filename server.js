@@ -444,6 +444,56 @@ async function run() {
       res.status(500).send({ error: err.message });
     }
   });
+  // ---------- HOME PAGE DATA ----------
+
+  app.get("/api/home/featured", async (req, res) => {
+    try {
+      const featured = await lessonsCollection
+        .find({ isFeatured: true, visibility: "Public" })
+        .limit(6)
+        .toArray();
+      res.send(featured);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.get("/api/home/top-contributors", async (req, res) => {
+    try {
+      const pipeline = [
+        { $match: { visibility: "Public" } },
+        {
+          $group: {
+            _id: "$creatorId",
+            name: { $first: "$creatorName" },
+            image: { $first: "$creatorImage" },
+            lessonsCount: { $sum: 1 },
+          },
+        },
+        { $sort: { lessonsCount: -1 } },
+        { $limit: 5 },
+      ];
+      const contributors = await lessonsCollection
+        .aggregate(pipeline)
+        .toArray();
+      res.send(contributors);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.get("/api/home/most-saved", async (req, res) => {
+    try {
+      const mostSaved = await lessonsCollection
+        .find({ visibility: "Public" })
+        .sort({ favoritesCount: -1 })
+        .limit(6)
+        .toArray();
+      res.send(mostSaved);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
 
 run().catch(console.error);
 
