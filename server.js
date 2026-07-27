@@ -309,6 +309,141 @@ async function run() {
     }
   });
 }
+// ---------- ADMIN ----------
+
+  app.get("/api/admin/stats", async (req, res) => {
+    try {
+      const totalUsers = await usersCollection.countDocuments();
+      const totalLessons = await lessonsCollection.countDocuments({
+        visibility: "Public",
+      });
+      const totalReported = await reportsCollection.countDocuments();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayLessons = await lessonsCollection.countDocuments({
+        createdAt: { $gte: today },
+      });
+
+      res.send({ totalUsers, totalLessons, totalReported, todayLessons });
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/users", async (req, res) => {
+    try {
+      const users = await usersCollection.find().toArray();
+      const usersWithCounts = await Promise.all(
+        users.map(async (u) => {
+          const lessonsCount = await lessonsCollection.countDocuments({
+            creatorId: u.id,
+          });
+          return { ...u, lessonsCount };
+        })
+      );
+      res.send(usersWithCounts);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.patch("/api/admin/users/:id/role", async (req, res) => {
+    try {
+      const { role } = req.body;
+      const result = await usersCollection.updateOne(
+        { id: req.params.id },
+        { $set: { role } }
+      );
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", async (req, res) => {
+    try {
+      const result = await usersCollection.deleteOne({ id: req.params.id });
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/lessons", async (req, res) => {
+    try {
+      const lessons = await lessonsCollection
+        .find()
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(lessons);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.patch("/api/admin/lessons/:id/feature", async (req, res) => {
+    try {
+      const { isFeatured } = req.body;
+      const result = await lessonsCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: { isFeatured } }
+      );
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.patch("/api/admin/lessons/:id/review", async (req, res) => {
+    try {
+      const result = await lessonsCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: { isReviewed: true } }
+      );
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/reports", async (req, res) => {
+    try {
+      const reports = await reportsCollection.find().toArray();
+
+      const grouped = {};
+      for (const r of reports) {
+        if (!grouped[r.lessonId]) grouped[r.lessonId] = [];
+        grouped[r.lessonId].push(r);
+      }
+
+      const result = await Promise.all(
+        Object.entries(grouped).map(async ([lessonId, reportsList]) => {
+          const lesson = await lessonsCollection.findOne({
+            _id: new ObjectId(lessonId),
+          });
+          return {
+            lessonId,
+            lessonTitle: lesson?.title || "Deleted Lesson",
+            reportCount: reportsList.length,
+            reports: reportsList,
+          };
+        })
+      );
+
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/reports/:lessonId/ignore", async (req, res) => {
+    try {
+      await reportsCollection.deleteMany({ lessonId: req.params.lessonId });
+      res.send({ message: "Reports cleared" });
+    } catch (err) {
+      res.status(500).send({ error: err.message });
+    }
+  });
 
 run().catch(console.error);
 
